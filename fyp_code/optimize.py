@@ -17,6 +17,7 @@ class Optimizer:
         self.alpha = alpha
         self.Ttrain = Ttrain
         self.Twashout = Twashout
+        self.sparsity = sparsity
         self.val_time = val_time
         self.test_time = test_time
         self.N = N
@@ -30,7 +31,7 @@ class Optimizer:
         rho = (rhoscale if rhoscale else self.rhoscale)
         bet = (beta if beta else self.beta)
         alph = (alpha if alpha else self.alpha)
-        my_esn = loukas_esn.Esn(self.data, rhoscale=rho, beta=bet, alpha=alph, Ttrain=self.Ttrain, Twashout=self.Twashout, N=self.N)
+        my_esn = loukas_esn.Esn(self.data, rhoscale=rho, beta=bet, alpha=alph, Ttrain=self.Ttrain, Twashout=self.Twashout, sparsity=self.sparsity, N=self.N)
         my_esn.train()
         #my_esn.validate(val_time=self.val_time)
         my_esn.test(test_time=self.test_time)
