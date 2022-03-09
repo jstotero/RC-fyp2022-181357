@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 # Optimization class for loukas_esn
 # Initialise with input data, rhos/betas/alphas parameter spaces, initial rho,beta,alpha, reservoir size N
 class Optimizer:
-    def __init__(self, data, rhos=[], betas=[], alphas=[], rhoscale=1.3, beta=1e-7, alpha=0.7, Ttrain=500, Twashout=200, val_time=500, test_time=500, N=100):
+    def __init__(self, data, rhos=[], betas=[], alphas=[], rhoscale=1.3, beta=1e-7, alpha=0.7, Ttrain=500, Twashout=200, sparsity=0.5, val_time=500, test_time=500, N=100):
         self.data = data
         self.rhos = rhos
         self.betas = betas
@@ -85,7 +85,6 @@ class Optimizer:
         hold_nmse_test = 1
         hole_rho = 1
         for r in self.rhos:
-            print("rho: {}".format(r))
             r_nmse = self.run_esn(rhoscale=r).nmse_test
             if r_nmse < hold_nmse_test:
                 hold_nmse_test = r_nmse
@@ -176,7 +175,7 @@ class Optimizer:
     # returns the rho-beta-alpha-nmse combination giving the lowest nmse for the given data in my esn
     # pass prnt=True to print results in words
     def rho_beta_alpha(self,prnt=False):
-        print(Fore.YELLOW + "WARNING: Make sure you are storing the output of this function in a single variable e.g. 'rban' or unpacking directly into 4 variables e.g. 'r, b, a, n'.")
+        print(Fore.YELLOW + "WARNING: Make sure you are storing the output of this function in a single variable e.g. 'rban' or unpacking directly into 4 variables e.g. 'r, b, a, n'." + Fore.RESET)
         hold_nmse_test = 1
         hold_rho = 1
         hold_beta = 1
@@ -310,6 +309,7 @@ class Optimizer:
                 min_k = k
         my_colors = {min_k:"tab:orange"}
         vocab = range(len_nmses)
+        print(Fore.GREEN + "Optimal rho: {}".format(self.rhos[min_k]) + Fore.RESET)
         # plotting
         for i in range(len_nmses):
             plt.scatter(x_values[i], y_values[i], color=my_colors.get(vocab[i], 'black'))
@@ -344,6 +344,7 @@ class Optimizer:
                 min_k = k
         my_colors = {min_k:"tab:orange"}
         vocab = range(len_nmses)
+        print(Fore.GREEN + "Optimal beta: {}".format(self.betas[min_k]) + Fore.RESET)
         # plotting
         for i in range(len_nmses):
             plt.scatter(x_values[i], y_values[i], color=my_colors.get(vocab[i], 'black'))
@@ -377,6 +378,7 @@ class Optimizer:
                 min_k = k
         my_colors = {min_k:"tab:orange"}
         vocab = range(len_nmses)
+        print(Fore.GREEN + "Optimal alpha: {}".format(self.alphas[min_k]) + Fore.RESET)
         # plotting
         for i in range(len_nmses):
             plt.scatter(x_values[i], y_values[i], color=my_colors.get(vocab[i], 'black'))
@@ -396,10 +398,10 @@ class Optimizer:
 def rho_recursive(optimizer, recursions=3, search_size=10):
     opt = optimizer
     if recursions:
-        print("{} left".format(recursions))
         print("rho: {}".format(opt.get_rho()))
+        print("{} recursions left".format(recursions))
         #print("rhos: {}".format(opt.get_rhos()))
-        print("RUNNING...\n")
+        print(Fore.YELLOW + "RUNNING...\n" + Fore.RESET)
         rhos_width_factor = (max(opt.get_rhos())-min(opt.get_rhos()))/3
         b_opt, _ = opt.opt_rho()
         opt.set_rho(b_opt)
@@ -409,7 +411,7 @@ def rho_recursive(optimizer, recursions=3, search_size=10):
         #print("new rhos: {}\n".format(opt.get_rhos()))
         return rho_recursive(opt, recursions-1, search_size=search_size)
     else:
-        print("~ RHO RECURSION COMPLETED: rho = {} ~\n".format(opt.get_rho()))
+        print(Fore.GREEN + "~ RHO RECURSION COMPLETED: rho = {} ~\n".format(opt.get_rho()) + Fore.RESET)
         return opt
 
 # recursive function locates the optimal beta given an optimizer with beta range over [recursions] iterations
@@ -419,10 +421,10 @@ def rho_recursive(optimizer, recursions=3, search_size=10):
 def beta_recursive(optimizer, recursions=3, search_size=10):
     opt = optimizer
     if recursions:
-        print("{} left".format(recursions))
         print("beta: {}".format(opt.get_beta()))
+        print("{} recursions left".format(recursions))
         #print("betas: {}".format(opt.get_betas()))
-        print("RUNNING...\n")
+        print(Fore.YELLOW + "RUNNING...\n" + Fore.RESET)
         betas_width_factor = (max(log10(opt.get_betas()))-min(log10(opt.get_betas())))/3
         b_opt, _ = opt.opt_beta()
         opt.set_beta(b_opt)
@@ -432,7 +434,7 @@ def beta_recursive(optimizer, recursions=3, search_size=10):
         #print("new betas: {}\n".format(opt.get_betas()))
         return beta_recursive(opt, recursions-1, search_size=search_size)
     else:
-        print("~ BETA RECURSION COMPLETED: beta = {} ~\n".format(opt.get_beta()))
+        print(Fore.GREEN + "~ BETA RECURSION COMPLETED: beta = {} ~\n".format(opt.get_beta()) + Fore.RESET)
         return opt
 
 # recursive function locates the optimal alpha given an optimizer with alpha range over [recursions] iterations
@@ -442,27 +444,27 @@ def beta_recursive(optimizer, recursions=3, search_size=10):
 def alpha_recursive(optimizer, recursions=3, search_size=10):
     opt = optimizer
     if recursions:
-        print("{} left".format(recursions))
         print("alpha: {}".format(opt.get_alpha()))
+        print("{} recursions left".format(recursions))
         #print("alphas: {}".format(opt.get_alphas()))
-        print("RUNNING...\n")
+        print(Fore.YELLOW + "RUNNING...\n" + Fore.RESET)
         alphas_width_factor = (max(opt.get_alphas())-min(opt.get_alphas()))/3
         b_opt, _ = opt.opt_alpha()
         opt.set_alpha(b_opt)
         if recursions > 1:
-            opt.set_alphas(linspace(max((b_opt-alphas_width_factor),0), b_opt+alphas_width_factor, search_size))
+            opt.set_alphas(linspace(max((b_opt-alphas_width_factor),0), min((b_opt+alphas_width_factor),1), search_size))
         #print("new alpha: {}\n".format(opt.get_alpha()))
         #print("new alphas: {}\n".format(opt.get_alphas()))
         return alpha_recursive(opt, recursions-1, search_size=search_size)
     else:
-        print("~ ALPHA RECURSION COMPLETED: alpha = {} ~\n".format(opt.get_alpha()))
+        print(Fore.GREEN + "~ ALPHA RECURSION COMPLETED: alpha = {} ~\n".format(opt.get_alpha()) + Fore.RESET)
         return opt
 
 # performs all 3 recursive parameter optimizations sequentially
 def full_recursive(optimizer, recursions=3, search_size=10):
-    opt_r = rho_recursive(optimizer, recursions, search_size)
-    opt_rb = beta_recursive(opt_r, recursions, search_size)
-    opt_rba = alpha_recursive(opt_rb, recursions, search_size)
+    opt_rba = rho_recursive(optimizer, recursions, search_size)
+    opt_rba = alpha_recursive(opt_rba, recursions, search_size)
+    opt_rba = beta_recursive(opt_rba, recursions, search_size)
     return opt_rba
     
 #------------------------------------------------------------------------------------------------------------------------------------
