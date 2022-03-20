@@ -1,6 +1,9 @@
 # Utilities
 from rc_datasets import rc_datasets
 import numpy as np
+import matplotlib.pyplot as plt
+plt.rcParams["figure.figsize"] = [18,8]
+plt.rcParams['figure.dpi'] = 150
 
 # used in data_mg()
 def test_mg(fac=10,Ttot=1000,x0=1.8,dt=0.1):
@@ -33,3 +36,10 @@ def data_sin(order=1,Ttot=10000):
 # reshape data
 def reshape(data):
     return np.array(data).reshape(1,len(data))
+
+# plot a util-shaped function [.reshape(1,Ttot)]
+def plot_data(data, data_len=500):
+    x = range(data_len)
+    y = data[0][:data_len]
+    plt.plot(x,y)
+    plt.show()

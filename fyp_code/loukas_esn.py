@@ -13,7 +13,7 @@ class Esn:
     
     # Initialise global variables at object creation
     # pass fix_eig=False to NOT fix the eigs function to a deterministic result, otherwise it does
-    def __init__(self,data,rhoscale=1.25,beta=10**-4,alpha=0.5,in_nodes=1,out_nodes=1,Ttrain=2000,Twashout=100,N=1000,seed_init=0,fix_eig=True):
+    def __init__(self,data,rhoscale=1.25,beta=10**-4,alpha=0.5,in_nodes=1,out_nodes=1,Ttrain=2000,Twashout=100,N=1000,sparsity=0,seed_init=0,fix_eig=True):
         # General variables
         np.random.seed(seed_init)
         self.alpha = alpha
@@ -38,6 +38,10 @@ class Esn:
         self.Win = np.random.uniform(low=-0.5, high=0.5, size=(N,in_nodes+1))
         self.W = np.random.uniform(low=-1.5, high=1.5, size=(N,N))
         self.Wout = np.zeros((out_nodes,in_nodes+N+1))
+        
+        # sparsify reservoir if sparsity > 0
+        if sparsity:
+            self.W = sparsify(sparsity,self.W)
         
         # init measurement matrix
         self.M_train = np.zeros((in_nodes+N+1,Ttrain))
@@ -250,3 +254,20 @@ class Esn:
         
     def get_all(self):
         return {"alpha":self.alpha, "beta":self.beta, "in_nodes":self.in_nodes, "out_nodes":self.out_nodes, "N":self.N, "Ttrain":self.Ttrain, "Twashout":self.Twashout, "T1":self.T1, "T2":self.T2, "data":self.data, "data_input":self.data_input, "x":self.x, "Win":self.Win, "W":self.W, "Wout":self.Wout, "M_train":self.M_train, "rho":self.rhoscale}
+
+#}-----------------------------------------------------------------------------------------------------------------------
+    
+# Reduce an array to a sparse version (entries = 0) proportional to [sparsity]
+# sparsity = 0 means no change; sparsity = 1 means all zeros
+def sparsify(sparsity, array):
+    assert 0<=sparsity<=1, "sparsity must be between 0 and 1"
+    L = array.size                                 # store total length of original array
+    ones = np.ones(int(L*(1-sparsity)))            # generate array of ones
+    zeros = np.zeros(int(L*sparsity))              # generate array of zeros
+    sparse = np.concatenate([ones,zeros])          # concatenate ones and zeros into sparsity array
+    np.random.shuffle(sparse)                      # randomize order of ones and zeros
+    if sparse.size<L:                              # sometimes one more entry is needed due to loss when rounding using int()
+        sparse = np.append(sparse,1.)
+    assert sparse.size == L, "wrong size sparsity array"
+    sparse = sparse.reshape(array.shape)           # reshape 1D sparsity array into original array.shape
+    return np.multiply(array,sparse)               # elementwise mulitiplication - entries in original array eliminated where zero in sparsity array
