@@ -1,4 +1,5 @@
 import numpy as np
+from colorama import Fore
 from numpy.linalg import inv
 from scipy.sparse.linalg import eigs
 import matplotlib.pyplot as plt
@@ -6,16 +7,33 @@ from matplotlib.pyplot import figure
 from sklearn.metrics import mean_squared_error
 plt.rcParams['figure.figsize'] = [20, 20]
 
-def nmse(y_pred,y_true):
-    return mean_squared_error(y_pred,y_true)/np.var(y_true)
+#=======================================================================================================================================================
+#  ESN class
+
+# pass:
+# @ data = time series data to learn
+# @ rho = rhoscale, spectral width used to scale reservoir matrix W
+# @ alpha = leakage rate
+# @ beta = regularization used when computing readout matrix Wout
+# @ in_nodes = number of input dimensions
+# @ out_nodes = number of output dimensions
+# @ Ttrain = number of time steps in training
+# @ Twashout = number of time steps in reservoir acclimation
+# @ N = reservoir size, number of nodes
+# @ sparsity = proportion of zero-weighted connections in reservoir matrix
+#              0 = no zeros; 1 = all zeros
+# @ seed_init = random number seed
+# @ fix_eig = True to fix consistent W eigen value on reinitialisation
+#             False to allow slightly different values on reinitialisation
 
 class Esn:
     
-    # Initialise global variables at object creation
-    # pass fix_eig=False to NOT fix the eigs function to a deterministic result, otherwise it does
-    def __init__(self,data,rhoscale=1.25,beta=10**-4,alpha=0.5,in_nodes=1,out_nodes=1,Ttrain=2000,Twashout=100,N=1000,sparsity=0,seed_init=0,fix_eig=True):
+    def __init__(self,data,rho=1.25,alpha=0.5,beta=10**-4,in_nodes=1,out_nodes=1,Ttrain=2000,Twashout=100,N=1000,W_sparsity=0,seed_init=0,fix_eig=True):
         # General variables
         np.random.seed(seed_init)
+        self.seed = seed_init
+        self.fix_eig = fix_eig
+        self.rho = rho
         self.alpha = alpha
         self.beta = beta
         self.in_nodes = in_nodes
@@ -23,6 +41,7 @@ class Esn:
         self.N = N
         self.Ttrain = Ttrain
         self.Twashout = Twashout
+        self.W_sparsity = W_sparsity
         
         # let's save the relevant time-steps for convenience
         self.T1=Twashout
@@ -37,23 +56,82 @@ class Esn:
         self.x = np.zeros(N)            # column vector
         self.Win = np.random.uniform(low=-0.5, high=0.5, size=(N,in_nodes+1))
         self.W = np.random.uniform(low=-1.5, high=1.5, size=(N,N))
+        self.W_dense = self.W                                         # used when changing sparsity
         self.Wout = np.zeros((out_nodes,in_nodes+N+1))
         
-        # sparsify reservoir if sparsity > 0
-        if sparsity:
-            self.W = sparsify(sparsity,self.W)
+        # sparsify reservoir if W_sparsity > 0; disallow sparsity >= 1
+        if W_sparsity:
+            self.W = sparsify(W_sparsity,self.W,seed_init)
+            
+        # initialised variables for storage
+        self.W_sparse = self.W
+        self.x_init = self.x
         
-        # init measurement matrix
+        # measurement matrix
         self.M_train = np.zeros((in_nodes+N+1,Ttrain))
         
-        if fix_eig:
-            eig,_=eigs(self.W,k=1,which='LM',tol=1e-8,v0=np.ones(N))
-        else:
-            eig,_=eigs(self.W,k=1,which='LM',tol=1e-8)
-        self.rhoscale = rhoscale/abs(eig)                  # adjust rhoscale using largest eigen value
-        self.W = self.W*self.rhoscale                      # scale spectral radius of W
+        # rescale spectral width of W
+        self.rescale_W(rho)
         
-    #}-------------------------------------------------------------------------------------------------------------------
+    #==========================================================================================================================================
+    # (RE)INITIALISATION
+    
+    # Rescale W given a new rhoscale
+    def rescale_W(self,r):
+        if self.fix_eig:
+            eig,_=eigs(self.W_sparse,k=1,which='LM',tol=1e-8,v0=np.ones(self.N))
+        else:
+            eig,_=eigs(self.W_sparse,k=1,which='LM',tol=1e-8)
+        self.W = self.W_sparse*(r/abs(eig))
+    
+    # Reset x to initial conditions
+    def reset_x(self):
+        self.x = self.x_init
+    
+    # Resparsify and rescale W given a new sparsity
+    def resparsify_W(self,sparsity):
+        self.W_sparse = sparsify(sparsity,self.W_dense,self.seed)
+        self.rescale_W(self.rho)
+        
+    #==========================================================================================================================================
+    # Variable setters/getters
+    
+    def set_rho(self,r):
+        self.rho = r
+        self.rescale_W(r)
+    
+    def set_alpha(self,a):
+        self.alpha = a
+    
+    def set_beta(self,b):
+        self.beta = b
+        
+    def set_W_sparsity(self,s):
+        self.W_sparsity = s
+        self.resparsify_W(s)
+        
+    #----------------------------------------
+        
+    def get_rho(self):
+        return self.rho
+    
+    def get_alpha(self):
+        return self.alpha
+    
+    def get_beta(self):
+        return self.beta
+    
+    def get_W_sparsity(self):
+        return self.W_sparsity
+    
+    #----------------------------------------
+    
+    # Returns all class variables as a string/value dictionary
+    # Useful to compare two ESNs
+    def get_all(self):
+        return {"rho":self.rho, "alpha":self.alpha, "beta":self.beta, "in_nodes":self.in_nodes, "out_nodes":self.out_nodes, "N":self.N, "Ttrain":self.Ttrain, "Twashout":self.Twashout, "W_sparsity":self.W_sparsity, "T1":self.T1, "T2":self.T2, "data":self.data, "data_input":self.data_input, "x":self.x, "Win":self.Win, "W":self.W, "W_dense":self.W_dense, "W_sparse":self.W_sparse, "Wout":self.Wout, "M_train":self.M_train, "X_train":self.X_train, "Y_train":self.Y_train, "x_store":self.x_store}
+        
+    #==========================================================================================================================================
     # TRAINING
         
     # Contruct M matrix
@@ -73,10 +151,12 @@ class Esn:
             self.x = (1-self.alpha)*self.x + self.alpha*np.tanh(self.Win@self.data_input[:,j] + self.W@self.x)
             self.M_train[:,i] = np.concatenate((self.data_input[:,j],self.x.flatten()))
             
-        # store the reservoir status after training
+        # store the reservoir activtions states after training
         self.x_store = self.x
+        
+    #------------------------------------------------------------------------------------------------------------------------
     
-    # Train Wout (provided M first)
+    # Train Wout (provided M trained)
     def train_readouts(self):
         Mt = self.M_train.transpose()
         D = self.Y_train
@@ -84,13 +164,15 @@ class Esn:
         
         self.Yhat_train=self.Wout@self.M_train                  # perform output prediction on established data
         self.nmse_train=nmse(self.Yhat_train,D)                 # compute error on prediction with correct data
-        #print("NMSE training:{:.2e}".format(self.nmse_train))
     
+    #------------------------------------------------------------------------------------------------------------------------
+    
+    # Composite train function
     def train(self):
         self.train_M()
         self.train_readouts()
         
-    #}-------------------------------------------------------------------------------------------------------------------
+    #==========================================================================================================================================
     # VALIDATION
     
     # Validate prediction with forced system for T>Ttrain
@@ -115,7 +197,7 @@ class Esn:
         self.nmse_val=nmse(self.Yhat_val,self.Y_val)
         #print("NMSE validation:{:.2e}".format(self.nmse_val))
 
-    #}-------------------------------------------------------------------------------------------------------------------
+    #==========================================================================================================================================
     # TESTING
     
     # Test function given a starting data_point and test time
@@ -139,7 +221,7 @@ class Esn:
         self.nmse_test=nmse(self.Yhat_test,self.Y_test)
         #print("NMSE test:{:.2e}".format(self.nmse_test))
     
-    #}-------------------------------------------------------------------------------------------------------------------
+    #==========================================================================================================================================
     # PLOTTING (copied)
 
     # Plot the static properties of the ESN
@@ -154,12 +236,16 @@ class Esn:
         plt.pcolor(self.W)
         plt.title('W')
         
+    #---------------------------------------------------------------------------------------------
+        
     # Plot M matrix
     def plot_M(self):
         fig,_=plt.subplots(nrows=1, ncols=1)
         plt.subplot(3,1,1)
         plt.pcolor(self.M,cmap='RdBu')
         plt.title('M')
+        
+    #---------------------------------------------------------------------------------------------
     
     # Plot the training data
     def plot_training(self):
@@ -178,6 +264,8 @@ class Esn:
             plt.plot(yy.T,label='NMSE training')
             plt.legend()
             
+    #---------------------------------------------------------------------------------------------
+            
     # Plot the validation data
     def plot_validation(self):
         fig,_=plt.subplots(nrows=2*self.out_nodes, ncols=1)
@@ -195,6 +283,8 @@ class Esn:
             yy=(self.Yhat_val[i,:]-self.Y_val[i,:])**2
             plt.plot(yy.T,label='NMSE validation')
             plt.legend()
+            
+    #---------------------------------------------------------------------------------------------
     
     # Plot the test data
     def plot_test(self):        
@@ -212,6 +302,8 @@ class Esn:
             yy=(self.Yhat_test[i,:]-self.Y_test[i,:])**2
             plt.plot(yy.T,label='NMSE test')
             plt.legend()
+            
+    #---------------------------------------------------------------------------------------------
     
     def simple_plot_train(self,x_size=10,y_size=5,dpi=100,linewidth=1):
         
@@ -226,6 +318,8 @@ class Esn:
         plt.title("Training")
         plt.legend()
         
+    #---------------------------------------------------------------------------------------------
+        
     def simple_plot_validation(self,x_size=10,y_size=5,dpi=100,linewidth=1):
         
         figure(figsize=(x_size, y_size),dpi=dpi)         # set figure size
@@ -238,6 +332,8 @@ class Esn:
         plt.plot(xs,correct,label="input",linewidth=linewidth)
         plt.title("Validation")
         plt.legend()
+        
+    #---------------------------------------------------------------------------------------------
         
     def simple_plot_test(self,x_size=10,y_size=5,dpi=100,linewidth=1):
         
@@ -252,14 +348,17 @@ class Esn:
         plt.title("Testing")
         plt.legend()
         
-    def get_all(self):
-        return {"alpha":self.alpha, "beta":self.beta, "in_nodes":self.in_nodes, "out_nodes":self.out_nodes, "N":self.N, "Ttrain":self.Ttrain, "Twashout":self.Twashout, "T1":self.T1, "T2":self.T2, "data":self.data, "data_input":self.data_input, "x":self.x, "Win":self.Win, "W":self.W, "Wout":self.Wout, "M_train":self.M_train, "rho":self.rhoscale}
+#=======================================================================================================================================================
+# Other functions
 
-#}-----------------------------------------------------------------------------------------------------------------------
-    
+# nmse function for error calculation
+def nmse(y_pred,y_true):
+    return mean_squared_error(y_pred,y_true)/np.var(y_true)
+
 # Reduce an array to a sparse version (entries = 0) proportional to [sparsity]
 # sparsity = 0 means no change; sparsity = 1 means all zeros
-def sparsify(sparsity, array):
+def sparsify(sparsity, array, seed=0):
+    np.random.seed(seed)
     assert 0<=sparsity<=1, "sparsity must be between 0 and 1"
     L = array.size                                 # store total length of original array
     ones = np.ones(int(L*(1-sparsity)))            # generate array of ones
@@ -271,3 +370,21 @@ def sparsify(sparsity, array):
     assert sparse.size == L, "wrong size sparsity array"
     sparse = sparse.reshape(array.shape)           # reshape 1D sparsity array into original array.shape
     return np.multiply(array,sparse)               # elementwise mulitiplication - entries in original array eliminated where zero in sparsity array
+        
+        
+# Compares class variables for each esn object
+def compare_vars(esn1, esn2):
+    ga1 = esn1.get_all()                         # store all variables for es1
+    ga2 = esn2.get_all()                         # store all variables for es1
+    falsity = {}                                 # initialise falsity dictionary
+    for key in ga1.keys():                       # iterate over variable names
+        truth = (ga1[key]==ga2[key])             # check if variable values are equal
+        if (isinstance(truth,bool) and not truth) or (isinstance(truth,np.ndarray) and not truth.all()):      # if they aren't equal then:
+            falsity[key] = False                                                                              # add to falsity dict
+    if bool(falsity):                            # if falsity dict is not empty i.e. there are differences between esn1 and esn2
+        print(Fore.RED + "ESN variables differ:\n")
+        for key in falsity.keys():
+            print(Fore.RED + key+":\n" + Fore.YELLOW + "ESN 1: {}\n".format(ga1[key]) + Fore.MAGENTA + "ESN 2: {}\n".format(ga2[key]))
+        return falsity
+    else:
+        print(Fore.CYAN + "ESN variables are equal")
